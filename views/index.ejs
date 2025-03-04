@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Mesaj Gönderme</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .container { max-width: 800px; }
+        .upload-area { 
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            margin: 20px 0;
+            cursor: pointer;
+        }
+        .upload-area:hover {
+            border-color: #0d6efd;
+        }
+        .group-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        .status-connected { background-color: #28a745; }
+        .status-disconnected { background-color: #dc3545; }
+        #qrCode {
+            max-width: 300px;
+            margin: 20px auto;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        #qrCode img {
+            width: 100%;
+            height: auto;
+        }
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            background-color: #25D366;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container py-5">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>WhatsApp Mesaj Gönderme</h1>
+            <div class="d-flex align-items-center gap-3">
+                <div class="d-flex align-items-center">
+                    <span class="status-indicator <%= connected ? 'status-connected' : 'status-disconnected' %>"></span>
+                    <span><%= connected ? 'Bağlı' : 'Bağlı Değil' %></span>
+                </div>
+                <div class="user-info">
+                    <div class="user-avatar">
+                        <%= user.username.charAt(0).toUpperCase() %>
+                    </div>
+                    <div class="dropdown">
+                        <button class="btn btn-link text-dark text-decoration-none dropdown-toggle" type="button" id="userMenu" data-bs-toggle="dropdown" aria-expanded="false">
+                            <%= user.username %>
+                        </button>
+                        <ul class="dropdown-menu" aria-labelledby="userMenu">
+                            <li><a class="dropdown-item" href="/logout">Çıkış Yap</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <% if (!connected) { %>
+            <div class="alert alert-warning">
+                WhatsApp'a bağlı değilsiniz. Lütfen QR kodu tarayarak bağlanın.
+            </div>
+            <div id="qrCode" class="text-center">
+                <img id="qrCodeImage" style="display: none;" alt="WhatsApp QR Code">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">QR kod yükleniyor...</p>
+            </div>
+        <% } %>
+
+        <% if (message) { %>
+            <div class="alert alert-<%= messageType %>">
+                <%= message %>
+            </div>
+        <% } %>
+
+        <div class="container mt-4">
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">WhatsApp Grupları</h5>
+                            <button id="refreshGroups" class="btn btn-sm btn-primary">
+                                <i class="fas fa-sync-alt"></i> Yenile
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div id="groupList">
+                                <% if (groups && groups.length > 0) { %>
+                                    <% groups.forEach(function(group) { %>
+                                        <div class="group-item mb-2">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <div>
+                                                    <strong><%= group.name %></strong>
+                                                    <br>
+                                                    <small class="text-muted">Katılımcı: <%= group.participantsCount %></small>
+                                                </div>
+                                                <div class="form-check">
+                                                    <input type="radio" name="selectedGroup" value="<%= group.id %>" class="form-check-input">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    <% }); %>
+                                <% } else { %>
+                                    <p class="text-muted">Henüz grup bulunmuyor.</p>
+                                <% } %>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-8">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">Excel Dosyaları</h5>
+                        </div>
+                        <div class="card-body">
+                            <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data">
+                                <div class="input-group mb-3">
+                                    <input type="file" name="excelFile" class="form-control" accept=".xlsx,.xls">
+                                    <button class="btn btn-primary" type="submit">Yükle</button>
+                                </div>
+                            </form>
+                            <div id="excelFilesList">
+                                <!-- Excel dosyaları burada listelenecek -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Otomatik Mesaj Ayarları</h5>
+                        </div>
+                        <div class="card-body">
+                            <form id="autoMessageForm">
+                                <div class="mb-3">
+                                    <label for="excelFile" class="form-label">Excel Dosyası</label>
+                                    <select class="form-select" id="excelFile" name="excelFile" required>
+                                        <option value="">Excel dosyası seçin</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="group" class="form-label">WhatsApp Grubu</label>
+                                    <select class="form-select" id="group" name="group" required>
+                                        <option value="">Grup seçin</option>
+                                        <% groups.forEach(function(group) { %>
+                                            <option value="<%= group.id %>"><%= group.name %></option>
+                                        <% }); %>
+                                    </select>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="scheduleType">Zamanlama Tipi:</label>
+                                    <select class="form-control" id="scheduleType" name="scheduleType">
+                                        <option value="">Seçiniz</option>
+                                        <option value="daily" <%= setting.schedule_type === 'daily' ? 'selected' : '' %>>Günlük</option>
+                                        <option value="hourly" <%= setting.schedule_type === 'hourly' ? 'selected' : '' %>>Saatlik</option>
+                                        <option value="minute" <%= setting.schedule_type === 'minute' ? 'selected' : '' %>>Dakikalık</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-group" id="scheduleTimeContainer">
+                                    <label for="scheduleTime">Gönderim Saati:</label>
+                                    <input type="time" class="form-control" id="scheduleTime" name="scheduleTime" value="<%= setting.schedule_time || '09:00' %>">
+                                </div>
+
+                                <div class="form-group" id="intervalHoursContainer">
+                                    <label for="intervalHours">Kaç Saatte Bir:</label>
+                                    <input type="number" class="form-control" id="intervalHours" name="intervalHours" min="1" max="24" value="<%= setting.interval_hours || 1 %>">
+                                </div>
+                                
+                                <div class="form-group" id="intervalMinutesContainer">
+                                    <label for="intervalMinutes">Kaç Dakikada Bir:</label>
+                                    <input type="number" class="form-control" id="intervalMinutes" name="intervalMinutes" min="1" max="60" value="<%= setting.interval_minutes || 5 %>">
+                                </div>
+
+                                <button type="submit" class="btn btn-primary">Ayarları Kaydet</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div class="card mt-3">
+                        <div class="card-header">
+                            <h5>Mevcut Ayarlar</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="currentSettings"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div class="modal fade" id="confirmModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Mesaj Gönderimi Onayı</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Seçilen gruba mesaj gönderilecek: <strong id="selectedGroupName"></strong></p>
+                    <p>Devam etmek istiyor musunuz?</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="button" class="btn btn-primary" onclick="sendMessage()">Gönder</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // DOM Elementleri
+        const fileInput = document.getElementById('fileInput');
+        const uploadArea = document.getElementById('uploadArea');
+        const selectedFileDiv = document.getElementById('selectedFile');
+        const uploadButton = document.getElementById('uploadButton');
+        const confirmModal = document.getElementById('confirmModal');
+        const qrCodeDiv = document.getElementById('qrCode');
+        const qrCodeImage = document.getElementById('qrCodeImage');
+        const connectionStatus = document.querySelector('.status-indicator');
+        const connectionText = document.querySelector('.status-indicator + span');
+        const groupListDiv = document.querySelector('.group-list');
+        const uploadForm = document.getElementById('uploadForm');
+        const schedulerButton = document.getElementById('schedulerButton');
+        const schedulerStatus = document.getElementById('schedulerStatus');
+        const refreshGroupsBtn = document.getElementById('refreshGroups');
+        const scheduleTypeSelect = document.getElementById('scheduleType');
+        const autoMessageForm = document.getElementById('autoMessageForm');
+        
+        // Kullanıcı ID
+        let userId = '<%= user.id %>';
+        let selectedGroupId = null;
+        
+        // Modal
+        let modal = null;
+        if (confirmModal) {
+            modal = new bootstrap.Modal(confirmModal);
+        }
+        
+        // Socket bağlantısı
+        const socket = io();
+        
+        // Socket olay dinleyicileri
+        socket.on('connect', () => {
+            socket.emit('user-session', userId);
+        });
+        
+        socket.on('qr', (qr) => {
+            if (qrCodeImage) {
+                qrCodeImage.src = qr;
+                qrCodeImage.style.display = 'block';
+                // Spinner'ı gizle
+                let spinner = qrCodeDiv?.querySelector('.spinner-border');
+                if (spinner) spinner.style.display = 'none';
+                // "QR kod yükleniyor..." yazısını gizle
+                let loadingText = qrCodeDiv?.querySelector('p');
+                if (loadingText) loadingText.style.display = 'none';
+            }
+        });
+        
+        socket.on('connection-status', (status) => {
+            if (connectionText) {
+                connectionText.textContent = status ? 'Bağlı' : 'Bağlı Değil';
+            }
+            if (connectionStatus) {
+                connectionStatus.className = 'status-indicator ' + (status ? 'status-connected' : 'status-disconnected');
+            }
+            if (status && qrCodeDiv) {
+                qrCodeDiv.style.display = 'none';
+            }
+        });
+        
+        socket.on('groups-updated', (groups) => {
+            updateGroups(groups);
+        });
+        
+        // Mesaj gönderildiğinde son/sonraki gönderim zamanı bilgilerini güncelleme
+        socket.on('message-sent', (data) => {
+            const settingElement = document.querySelector(`.setting-item-${data.settingId}`);
+            if (settingElement) {
+                const lastSentElement = settingElement.querySelector('.last-sent-time');
+                const nextSendElement = settingElement.querySelector('.next-send-time');
+                
+                if (lastSentElement) lastSentElement.textContent = data.lastSentAt;
+                if (nextSendElement) nextSendElement.textContent = data.nextSendAt;
+                
+                // UI'da bir bildirim göster
+                const alertArea = document.getElementById('alertArea');
+                if (alertArea) {
+                    const alertDiv = document.createElement('div');
+                    alertDiv.className = 'alert alert-success alert-dismissible fade show';
+                    alertDiv.innerHTML = `
+                        <strong>Mesaj Gönderildi!</strong> 
+                        ${data.lastSentAt} tarihinde bir mesaj gönderildi.
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    `;
+                    alertArea.prepend(alertDiv);
+                    
+                    // 5 saniye sonra alarmı otomatik kapat
+                    setTimeout(() => {
+                        const bsAlert = new bootstrap.Alert(alertDiv);
+                        bsAlert.close();
+                    }, 5000);
+                }
+            }
+        });
+        
+        // Drag and drop için event listener'lar
+        if (uploadArea) {
+            uploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadArea.style.borderColor = '#0d6efd';
+            });
+            
+            uploadArea.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                uploadArea.style.borderColor = '#ddd';
+            });
+            
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadArea.style.borderColor = '#ddd';
+                const files = e.dataTransfer.files;
+                if (files.length && fileInput) {
+                    fileInput.files = files;
+                    updateSelectedFile();
+                }
+            });
+        }
+        
+        if (fileInput) {
+            fileInput.addEventListener('change', updateSelectedFile);
+        }
+        
+        // Excel dosyası yükleme formu
+        if (uploadForm) {
+            uploadForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const formData = new FormData(this);
+                
+                fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => {
+                    // Önce yanıt tipini kontrol edelim
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        return response.json();
+                    } else {
+                        // JSON değilse, hata olarak işleyelim
+                        throw new Error('Sunucudan geçersiz yanıt alındı. Sunucu hatası olabilir.');
+                    }
+                })
+                .then(data => {
+                    if (data.success) {
+                        alert('Dosya başarıyla yüklendi!');
+                        loadExcelFiles();
+                    } else {
+                        alert('Dosya yüklenirken bir hata oluştu: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Dosya yüklenirken bir hata oluştu: ' + error.message);
+                });
+            });
+        }
+        
+        // Otomatik mesaj zamanlaması kontrolü
+        if (schedulerButton) {
+            schedulerButton.addEventListener('click', function() {
+                if (schedulerStatus) {
+                    schedulerStatus.innerHTML = '<div class="spinner-border spinner-border-sm text-primary" role="status"><span class="visually-hidden">Loading...</span></div> Kontrol ediliyor...';
+                }
+                
+                fetch('/check-policies')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (!schedulerStatus) return;
+                        
+                        if (data.success) {
+                            schedulerStatus.innerHTML = `<div class="alert alert-success mt-2">${data.message}</div>`;
+                        } else {
+                            schedulerStatus.innerHTML = `<div class="alert alert-danger mt-2">Hata: ${data.error}</div>`;
+                        }
+                    })
+                    .catch(error => {
+                        if (schedulerStatus) {
+                            schedulerStatus.innerHTML = `<div class="alert alert-danger mt-2">Bir hata oluştu: ${error.message}</div>`;
+                        }
+                    });
+            });
+        }
+        
+        // Grup yenileme butonu
+        if (refreshGroupsBtn) {
+            refreshGroupsBtn.addEventListener('click', refreshGroups);
+        }
+        
+        // Gönderim tipi değişimi
+        if (scheduleTypeSelect) {
+            scheduleTypeSelect.addEventListener('change', function() {
+                const scheduleTimeContainer = document.getElementById('scheduleTimeContainer');
+                const intervalHoursContainer = document.getElementById('intervalHoursContainer');
+                const intervalMinutesContainer = document.getElementById('intervalMinutesContainer');
+                
+                // Tüm alanları gizle
+                if (scheduleTimeContainer) scheduleTimeContainer.style.display = 'none';
+                if (intervalHoursContainer) intervalHoursContainer.style.display = 'none';
+                if (intervalMinutesContainer) intervalMinutesContainer.style.display = 'none';
+                
+                // Seçime göre ilgili alanı göster
+                if (this.value === 'daily' && scheduleTimeContainer) {
+                    scheduleTimeContainer.style.display = 'block';
+                } else if (this.value === 'hourly' && intervalHoursContainer) {
+                    intervalHoursContainer.style.display = 'block';
+                } else if (this.value === 'minute' && intervalMinutesContainer) {
+                    intervalMinutesContainer.style.display = 'block';
+                }
+            });
+        }
+        
+        // Otomatik mesaj ayarları formu
+        if (autoMessageForm) {
+            autoMessageForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                try {
+                    // Form elemanlarını güvenli şekilde al
+                    const groupId = autoMessageForm.elements['group'] ? autoMessageForm.elements['group'].value : '';
+                    const excelFileId = autoMessageForm.elements['excelFile'] ? autoMessageForm.elements['excelFile'].value : '';
+                    const scheduleType = autoMessageForm.elements['scheduleType'] ? autoMessageForm.elements['scheduleType'].value : '';
+                    const scheduleTime = autoMessageForm.elements['scheduleTime'] ? autoMessageForm.elements['scheduleTime'].value : '';
+                    const intervalHours = autoMessageForm.elements['intervalHours'] ? autoMessageForm.elements['intervalHours'].value : '';
+                    const intervalMinutes = autoMessageForm.elements['intervalMinutes'] ? autoMessageForm.elements['intervalMinutes'].value : '';
+                    
+                    const response = await fetch('/auto-message-settings', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            groupId: groupId,
+                            excelFileId: excelFileId,
+                            scheduleType: scheduleType,
+                            scheduleTime: scheduleTime,
+                            intervalHours: intervalHours,
+                            intervalMinutes: intervalMinutes
+                        })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        alert('Ayarlar başarıyla kaydedildi!');
+                        window.location.reload();
+                    } else {
+                        alert(result.error || 'Ayarlar kaydedilirken bir hata oluştu!');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('Bağlantı hatası!');
+                }
+            });
+        }
+        
+        // Mevcut ayarları düzenleme formu
+        let settingsForm = document.getElementById('settingsForm');
+        if (settingsForm) {
+            settingsForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                try {
+                    const formData = new FormData(this);
+                    const settingId = this.dataset.settingId || '';
+                    let url = '/auto-message-settings';
+                    let method = 'POST';
+                    
+                    if (settingId) {
+                        url = `/auto-message-settings/${settingId}`;
+                        method = 'PUT';
+                    }
+                    
+                    // FormData'yı JSON'a dönüştür - null kontrolü ile
+                    const scheduleType = formData.get('scheduleType') || '';
+                    const jsonData = {
+                        groupId: formData.get('groupId') || '',
+                        excelFileId: formData.get('excelFileId') || '',
+                        scheduleType: scheduleType,
+                        scheduleTime: formData.get('scheduleTime') || '',
+                        intervalHours: formData.get('intervalHours') || '',
+                        intervalMinutes: formData.get('intervalMinutes') || ''
+                    };
+                    
+                    console.log('Gönderilecek form verisi:', jsonData);
+                    
+                    // Zamanlama tipi kontrolü
+                    if (scheduleType === 'daily' && !jsonData.scheduleTime) {
+                        alert('Lütfen günlük gönderim için saat belirtin');
+                        return;
+                    } else if (scheduleType === 'hourly' && !jsonData.intervalHours) {
+                        alert('Lütfen saatlik gönderim için saat aralığı belirtin');
+                        return;
+                    } else if (scheduleType === 'minute' && !jsonData.intervalMinutes) {
+                        alert('Lütfen dakikalık gönderim için dakika aralığı belirtin');
+                        return;
+                    }
+                    
+                    // Ayarları kaydet
+                    fetch(url, {
+                        method: method,
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(jsonData)
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert('Ayarlar başarıyla kaydedildi!');
+                            window.location.reload();
+                        } else {
+                            alert(data.error || 'Ayarlar kaydedilirken bir hata oluştu!');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Bağlantı hatası!');
+                    });
+                } catch (error) {
+                    console.error('Form submit error:', error);
+                    alert('Form işlenirken bir hata oluştu: ' + error.message);
+                }
+            });
+        }
+        
+        // Sayfa yüklendiğinde verileri yükle
+        loadExcelFiles();
+        loadCurrentSettings();
+
+        // Zamanlama tipine göre alanları göster/gizle
+        function updateFormFields() {
+            const scheduleType = document.getElementById('scheduleType');
+            const scheduleTimeContainer = document.getElementById('scheduleTimeContainer');
+            const intervalHoursContainer = document.getElementById('intervalHoursContainer');
+            const intervalMinutesContainer = document.getElementById('intervalMinutesContainer');
+            
+            if (scheduleType && scheduleTimeContainer && intervalHoursContainer && intervalMinutesContainer) {
+                const selectedType = scheduleType.value;
+                
+                // Tüm alanları gizle
+                scheduleTimeContainer.style.display = 'none';
+                intervalHoursContainer.style.display = 'none';
+                intervalMinutesContainer.style.display = 'none';
+                
+                // Seçilen tipe göre ilgili alanı göster
+                if (selectedType === 'daily') {
+                    scheduleTimeContainer.style.display = 'block';
+                } else if (selectedType === 'hourly') {
+                    intervalHoursContainer.style.display = 'block';
+                } else if (selectedType === 'minute') {
+                    intervalMinutesContainer.style.display = 'block';
+                }
+            }
+        }
+
+        // Sayfa yüklendiğinde ve zamanlama tipi değiştiğinde formu güncelle
+        const scheduleType = document.getElementById('scheduleType');
+        if (scheduleType) {
+            updateFormFields(); // Sayfa yüklendiğinde
+            scheduleType.addEventListener('change', updateFormFields); // Değer değiştiğinde
+        }
+    });
+
+    // Yardımcı fonksiyonlar
+    function updateSelectedFile() {
+        const fileInput = document.getElementById('fileInput');
+        const selectedFileDiv = document.getElementById('selectedFile');
+        const uploadButton = document.getElementById('uploadButton');
+        
+        if (!fileInput || !selectedFileDiv) return;
+        
+        const file = fileInput.files[0];
+        if (file) {
+            selectedFileDiv.textContent = `Seçilen dosya: ${file.name}`;
+            if (uploadButton) uploadButton.disabled = false;
+        } else {
+            selectedFileDiv.textContent = '';
+            if (uploadButton) uploadButton.disabled = true;
+        }
+    }
+
+    function selectGroup(groupId, groupName) {
+        const selectedGroupNameEl = document.getElementById('selectedGroupName');
+        const confirmModal = document.getElementById('confirmModal');
+        
+        if (!confirmModal) return;
+        
+        selectedGroupId = groupId;
+        if (selectedGroupNameEl) {
+            selectedGroupNameEl.textContent = groupName;
+        }
+        
+        const modal = new bootstrap.Modal(confirmModal);
+        modal.show();
+    }
+
+    function sendMessage() {
+        if (!selectedGroupId) return;
+        
+        fetch('/send-message', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                groupId: selectedGroupId
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            const confirmModal = document.getElementById('confirmModal');
+            if (confirmModal) {
+                const modal = new bootstrap.Modal(confirmModal);
+                modal.hide();
+            }
+            
+            if (data.success) {
+                alert('Mesaj başarıyla gönderildi!');
+            } else {
+                alert('Mesaj gönderilirken bir hata oluştu: ' + data.error);
+            }
+        })
+        .catch(error => {
+            const confirmModal = document.getElementById('confirmModal');
+            if (confirmModal) {
+                const modal = new bootstrap.Modal(confirmModal);
+                modal.hide();
+            }
+            
+            alert('Bir hata oluştu: ' + error.message);
+        });
+    }
+
+    function updateGroups(groups) {
+        const groupListDiv = document.querySelector('.group-list');
+        if (!groupListDiv) return;
+        
+        if (!groups || groups.length === 0) {
+            groupListDiv.innerHTML = '<p class="text-muted">Henüz grup bulunamadı.</p>';
+            return;
+        }
+        
+        const listGroup = document.createElement('div');
+        listGroup.className = 'list-group';
+        
+        groups.forEach(group => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center';
+            button.onclick = () => selectGroup(group.id, group.name);
+            
+            button.innerHTML = `
+                ${group.name}
+                <span class="badge bg-primary rounded-pill">${group.participantsCount} üye</span>
+            `;
+            
+            listGroup.appendChild(button);
+        });
+        
+        groupListDiv.innerHTML = '';
+        groupListDiv.appendChild(listGroup);
+    }
+
+    async function loadExcelFiles() {
+        try {
+            const response = await fetch('/excel-files');
+            const result = await response.json();
+            
+            if (result.success) {
+                const select = document.getElementById('excelFile');
+                if (!select) return;
+                
+                select.innerHTML = '<option value="">Excel dosyası seçin</option>';
+                
+                const excelFilesList = document.getElementById('excelFilesList');
+                if (excelFilesList) {
+                    excelFilesList.innerHTML = '';
+                    
+                    // Excel dosyalarını hem listede hem de selectbox'da göster
+                    result.files.forEach(file => {
+                        // Selectbox için
+                        const option = document.createElement('option');
+                        option.value = file.id;
+                        option.textContent = file.original_name || file.file_name;
+                        select.appendChild(option);
+                        
+                        // Liste görünümü için
+                        const fileItem = document.createElement('div');
+                        fileItem.className = 'd-flex justify-content-between align-items-center p-2 border-bottom';
+                        fileItem.innerHTML = `
+                            <span>${file.original_name || file.file_name}</span>
+                            <button class="btn btn-sm btn-danger" onclick="deleteExcelFile(${file.id})">Sil</button>
+                        `;
+                        excelFilesList.appendChild(fileItem);
+                    });
+                    
+                    if (result.files.length === 0) {
+                        excelFilesList.innerHTML = '<p class="text-muted">Henüz excel dosyası yüklenmemiş.</p>';
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error loading Excel files:', error);
+        }
+    }
+
+    function deleteExcelFile(id) {
+        if (!confirm('Bu dosyayı silmek istediğinizden emin misiniz?')) return;
+        
+        fetch(`/excel-files/${id}`, {
+            method: 'DELETE'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                loadExcelFiles();
+            } else {
+                alert('Dosya silinirken bir hata oluştu: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Dosya silinirken bir hata oluştu.');
+        });
+    }
+
+    async function loadCurrentSettings() {
+        try {
+            const response = await fetch('/auto-message-settings');
+            const result = await response.json();
+            
+            if (result.success) {
+                const settingsDiv = document.getElementById('currentSettings');
+                if (!settingsDiv) return;
+                
+                if (!result.settings || result.settings.length === 0) {
+                    settingsDiv.innerHTML = '<p>Henüz kayıtlı ayar bulunmuyor.</p>';
+                    return;
+                }
+                
+                let html = '<div id="alertArea"></div><div class="list-group">';
+                result.settings.forEach(setting => {
+                    // Zamanları formatla
+                    const lastSentTime = setting.last_sent_at ? new Date(setting.last_sent_at).toLocaleString('tr-TR') : 'Henüz gönderim yapılmadı';
+                    const nextSendTime = setting.next_send_at ? new Date(setting.next_send_at).toLocaleString('tr-TR') : 'Planlanmadı';
+                    
+                    html += `
+                        <div class="list-group-item setting-item-${setting.id}">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h6>Excel: ${setting.excel_file_name}</h6>
+                                    <p class="mb-1">Grup: ${setting.group_name}</p>
+                                    <p class="mb-1">
+                                        ${setting.schedule_type === 'daily' 
+                                            ? `Günlük - Saat: ${setting.schedule_time}` 
+                                            : setting.schedule_type === 'hourly' 
+                                                ? `Saatlik - Her ${setting.interval_hours} saatte bir`
+                                                : `Dakikalık - Her ${setting.interval_minutes} dakikada bir`}
+                                    </p>
+                                    <div class="text-muted small">
+                                        <div>Son Gönderim: <span class="last-sent-time">${lastSentTime}</span></div>
+                                        <div>Sonraki Gönderim: <span class="next-send-time">${nextSendTime}</span></div>
+                                    </div>
+                                </div>
+                                <button class="btn btn-danger btn-sm" onclick="deleteSetting('${setting.id}')">
+                                    Sil
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                settingsDiv.innerHTML = html;
+            }
+        } catch (error) {
+            console.error('Error loading current settings:', error);
+        }
+    }
+
+    async function deleteSetting(id) {
+        if (!confirm('Bu ayarı silmek istediğinizden emin misiniz?')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/auto-message-settings/${id}`, {
+                method: 'DELETE'
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                alert('Ayar başarıyla silindi!');
+                loadCurrentSettings();
+            } else {
+                alert('Hata: ' + result.error);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Bir hata oluştu!');
+        }
+    }
+
+    function refreshGroups() {
+        fetch('/refresh-groups', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const groupList = document.getElementById('groupList');
+                if (!groupList) return;
+                
+                groupList.innerHTML = '';
+                
+                if (data.groups && data.groups.length > 0) {
+                    data.groups.forEach(group => {
+                        const groupItem = document.createElement('div');
+                        groupItem.className = 'group-item mb-2';
+                        groupItem.innerHTML = `
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong>${group.name}</strong>
+                                    <br>
+                                    <small class="text-muted">Katılımcı: ${group.participantsCount}</small>
+                                </div>
+                                <div class="form-check">
+                                    <input type="radio" name="selectedGroup" value="${group.id}" class="form-check-input">
+                                </div>
+                            </div>
+                        `;
+                        groupList.appendChild(groupItem);
+                    });
+                } else {
+                    groupList.innerHTML = '<p class="text-muted">Henüz grup bulunmuyor.</p>';
+                }
+            } else {
+                alert('Gruplar yenilenirken bir hata oluştu: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Gruplar yenilenirken bir hata oluştu.');
+        });
+    }
+    </script>
+</body>
+</html> 

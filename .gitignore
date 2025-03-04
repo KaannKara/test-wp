@@ -1,0 +1,6 @@
+.vercel
+node_modules
+# WhatsApp session files
+tokens/
+.wwebjs_auth/
+.wwebjs_cache/
